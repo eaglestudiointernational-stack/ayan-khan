@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
+import Logo from './components/Logo';
 import { ChatMessage as ChatMessageType, ChatSession, AssistantMode } from './types';
-import { getGeminiResponse } from './services/geminiService';
-import { Menu, Zap, Info } from 'lucide-react';
+import { getGeminiResponse, generateImage } from './services/geminiService';
+import { Menu, Zap, Info, ShieldCheck, Sparkles, Layers } from 'lucide-react';
 
 const App: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -14,59 +15,53 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Load from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('omnimind_sessions');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setSessions(parsed);
-        if (parsed.length > 0) setCurrentSessionId(parsed[0].id);
-      } catch (e) {
-        console.error("Failed to load sessions", e);
-      }
+        if (Array.isArray(parsed)) {
+          setSessions(parsed);
+          if (parsed.length > 0) setCurrentSessionId(parsed[0].id);
+        }
+      } catch (e) { console.error(e); }
     }
   }, []);
 
-  // Save to localStorage
   useEffect(() => {
     localStorage.setItem('omnimind_sessions', JSON.stringify(sessions));
   }, [sessions]);
 
-  // Scroll to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [sessions, currentSessionId]);
+  }, [sessions, currentSessionId, isLoading]);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
 
   const handleNewChat = () => {
     const newSession: ChatSession = {
       id: Date.now().toString(),
-      title: 'New Conversation',
+      title: 'New Discussion',
       messages: [],
       lastUpdated: Date.now()
     };
-    setSessions([newSession, ...sessions]);
+    setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
     setIsSidebarOpen(false);
   };
 
-  const handleSendMessage = async (content: string, mode: AssistantMode) => {
-    let activeSessionId = currentSessionId;
+  const handleSendMessage = async (content: string, mode: AssistantMode, useSearch: boolean) => {
+    let activeSessionId = currentSessionId || Date.now().toString();
     
-    // Create new session if none exists
-    if (!activeSessionId) {
-      const newId = Date.now().toString();
+    if (!currentSessionId) {
       const newSession: ChatSession = {
-        id: newId,
-        title: content.substring(0, 30) + (content.length > 30 ? '...' : ''),
+        id: activeSessionId,
+        title: content.substring(0, 30) + '...',
         messages: [],
         lastUpdated: Date.now()
       };
-      setSessions([newSession, ...sessions]);
-      activeSessionId = newId;
-      setCurrentSessionId(newId);
+      setSessions(prev => [newSession, ...prev]);
+      setCurrentSessionId(activeSessionId);
     }
 
     const userMsg: ChatMessageType = {
@@ -76,103 +71,74 @@ const App: React.FC = () => {
       timestamp: Date.now(),
     };
 
-    // Update session title on first message
-    setSessions(prev => prev.map(s => {
-      if (s.id === activeSessionId) {
-        return {
-          ...s,
-          messages: [...s.messages, userMsg],
-          title: s.messages.length === 0 ? (content.substring(0, 35) + '...') : s.title,
-          lastUpdated: Date.now()
-        };
-      }
-      return s;
-    }));
+    setSessions(prev => prev.map(s => s.id === activeSessionId ? {
+      ...s,
+      messages: [...s.messages, userMsg],
+      title: s.messages.length === 0 ? content.substring(0, 35) + '...' : s.title,
+      lastUpdated: Date.now()
+    } : s));
 
     setIsLoading(true);
 
     try {
-      const history = (currentSession?.messages || []).map(m => ({
-        role: m.role,
-        content: m.content
-      }));
+      if (mode === AssistantMode.Artistic) {
+        const imageUrl = await generateImage(content);
+        const assistantMsg: ChatMessageType = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `I've created this image based on your prompt: "${content}"`,
+          timestamp: Date.now(),
+          type: 'image',
+          imageUrl
+        };
+        setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, assistantMsg] } : s));
+      } else {
+        const history = (sessions.find(s => s.id === activeSessionId)?.messages || []).map(m => ({
+          role: m.role,
+          content: m.content
+        }));
 
-      const systemInstruction = `
-        You are OmniMind, an advanced AI Assistant powered by Gemini 3.
-        Your goal is to be helpful, professional, and clear.
-        Current Mode: ${mode}
+        const systemInstruction = `You are OmniMind, an advanced AI Assistant by Muhammad Ayan. Mode: ${mode}.`;
+        const response = await getGeminiResponse(content, history, systemInstruction, useSearch);
 
-        Specific guidelines for ${mode}:
-        - Creative Writing: Focus on vivid imagery, engaging dialogue, and publishable quality.
-        - Technical Support: Provide step-by-step, error-free instructions with code blocks where relevant.
-        - Educational Help: Explain concepts clearly, use analogies, and provide quizzes or summaries if requested.
-        - Productivity: Draft emails, reports, and plans with professional formatting.
-        - Urdu & Culture: Respond in high-quality Urdu (using Noto Sans Arabic) where appropriate. Respect cultural nuances and provide moral/historical context.
-        - General: Be concise yet comprehensive.
-
-        Always use:
-        - Markdown for structure (headings, lists).
-        - LaTeX for math: Use $...$ for inline and $$...$$ for block math.
-        - Tables for comparisons.
-        - Accurate, up-to-date facts (Search grounding is enabled).
-      `;
-
-      const response = await getGeminiResponse(content, history, systemInstruction);
-
-      const assistantMsg: ChatMessageType = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.text,
-        timestamp: Date.now(),
-        sources: response.sources
-      };
-
-      setSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) {
-          return {
-            ...s,
-            messages: [...s.messages, assistantMsg],
-            lastUpdated: Date.now()
-          };
-        }
-        return s;
-      }));
+        const assistantMsg: ChatMessageType = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: response.text,
+          timestamp: Date.now(),
+          sources: response.sources
+        };
+        setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, assistantMsg] } : s));
+      }
     } catch (err: any) {
+      const content = err.message === "QUOTA_EXHAUSTED" 
+        ? "⚠️ API Limit reached. Please wait a minute." 
+        : `Error: ${err.message}`;
+      
       const errorMsg: ChatMessageType = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Sorry, I encountered an error: ${err.message || 'Unknown error'}. Please check your API key and network connection.`,
+        content,
         timestamp: Date.now(),
         isError: true
       };
-
-      setSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) {
-          return {
-            ...s,
-            messages: [...s.messages, errorMsg],
-            lastUpdated: Date.now()
-          };
-        }
-        return s;
-      }));
+      setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, errorMsg] } : s));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSelectSession = (id: string) => {
-    setCurrentSessionId(id);
-    setIsSidebarOpen(false);
-  };
-
+  const handleSelectSession = (id: string) => { setCurrentSessionId(id); setIsSidebarOpen(false); };
   const handleDeleteSession = (id: string) => {
-    setSessions(prev => prev.filter(s => s.id !== id));
-    if (currentSessionId === id) setCurrentSessionId(null);
+    setSessions(prev => {
+      const filtered = prev.filter(s => s.id !== id);
+      if (currentSessionId === id) setCurrentSessionId(filtered.length > 0 ? filtered[0].id : null);
+      return filtered;
+    });
   };
 
   return (
-    <div className="flex h-screen bg-[#f8fafc]">
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden">
       <Sidebar
         sessions={sessions}
         currentSessionId={currentSessionId}
@@ -183,96 +149,79 @@ const App: React.FC = () => {
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
 
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-4 z-10 sticky top-0">
-          <div className="flex items-center">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-2 text-slate-500 hover:bg-slate-50 rounded-lg mr-2"
-            >
-              <Menu size={20} />
+      <main className="flex-1 flex flex-col min-w-0 h-full relative bg-[#fcfdff]">
+        <header className="h-16 border-b border-slate-200/60 bg-white/70 backdrop-blur-xl flex items-center justify-between px-6 z-20 sticky top-0 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
+              <Menu size={22} />
             </button>
-            <div>
-              <h1 className="text-sm font-bold text-slate-900 truncate max-w-[200px] md:max-w-md">
-                {currentSession?.title || 'OmniMind AI'}
+            <div className="flex flex-col">
+              <h1 className="text-sm font-black text-slate-900 truncate max-w-[200px] tracking-tight">
+                {currentSession?.title || 'OMNIMIND AI'}
               </h1>
-              <div className="flex items-center text-[10px] text-indigo-600 font-medium uppercase tracking-wide">
-                <Zap size={10} className="mr-1 fill-indigo-600" />
-                Gemini 3 Pro Active
+              <div className="flex items-center text-[9px] text-indigo-600 font-black uppercase tracking-[0.2em]">
+                <Sparkles size={10} className="mr-1.5 fill-indigo-600 animate-pulse" />
+                Gemini 3 Multi-Engine
               </div>
             </div>
           </div>
           
-          <div className="flex items-center space-x-2">
-            <div className="hidden sm:flex px-2 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-full border border-green-100 items-center">
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse" />
-              SYSTEM ONLINE
-            </div>
-            <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors">
-              <Info size={18} />
-            </button>
+          <div className="flex items-center gap-4">
+             <div className="hidden lg:flex items-center px-3 py-1.5 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
+               <Layers size={14} className="text-indigo-600 mr-2" />
+               <span className="text-[10px] font-bold text-indigo-700 tracking-wider">PREMIUM ACCESS</span>
+             </div>
+             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 shadow-lg shadow-indigo-100 flex items-center justify-center text-white text-[10px] font-black">
+                MA
+             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar pt-8 pb-4">
-          <div className="max-w-4xl mx-auto px-4">
+        <div className="flex-1 overflow-y-auto pt-8 pb-4 scroll-smooth">
+          <div className="max-w-4xl mx-auto px-4 pb-16">
             {(!currentSession || currentSession.messages.length === 0) ? (
-              <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6">
-                <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-2xl shadow-indigo-200 rotate-3">
-                  O
-                </div>
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">How can I help you today?</h2>
-                  <p className="text-slate-500 max-w-md mx-auto">
-                    Your personal expert for creative writing, code debugging, research, and cultural translation.
+              <div className="flex flex-col items-center justify-center min-h-[70vh] text-center space-y-10 animate-in fade-in zoom-in-95 duration-1000">
+                <Logo className="w-32 h-32" />
+                <div className="space-y-4">
+                  <h2 className="text-5xl font-black text-slate-900 tracking-tighter">Welcome to OmniMind</h2>
+                  <p className="text-slate-400 max-w-lg mx-auto text-lg font-medium leading-relaxed">
+                    The next generation of AI is here. Experience high-fidelity creative art, real-time research, and human-like understanding.
                   </p>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl mt-8">
-                  {[
-                    { title: "Technical Support", text: "Explain quantum computing simply", icon: "💻" },
-                    { title: "Creative Writing", text: "Write a poem about a rainy night in Lahore", icon: "✍️" },
-                    { title: "Productivity", text: "Draft a formal apology email to a client", icon: "📈" },
-                    { title: "Urdu Culture", text: "اردو میں علامہ اقبال کی شاعری پر تبصرہ کریں", icon: "🕌" }
-                  ].map((card, i) => (
-                    <button 
-                      key={i}
-                      onClick={() => handleSendMessage(card.text, AssistantMode.General)}
-                      className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-400 hover:shadow-lg transition-all group"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">{card.icon}</span>
-                        <div>
-                           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{card.title}</div>
-                           <div className="text-sm font-medium text-slate-700 group-hover:text-indigo-600 truncate">{card.text}</div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                <div className="flex flex-wrap justify-center gap-3 max-w-3xl">
+                   {["Generate a Cyberpunk City", "Top 10 Trends in AI 2025", "اردو شاعری کی تاریخ", "Fix my React performance"].map((p, i) => (
+                     <button key={i} onClick={() => handleSendMessage(p, AssistantMode.General, true)} className="px-5 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 hover:shadow-xl hover:-translate-y-0.5 transition-all shadow-sm">
+                       {p}
+                     </button>
+                   ))}
                 </div>
               </div>
             ) : (
-              currentSession.messages.map((msg) => (
-                <ChatMessage key={msg.id} message={msg} />
-              ))
+              <div className="space-y-4">
+                {currentSession.messages.map((msg) => <ChatMessage key={msg.id} message={msg} />)}
+              </div>
             )}
+            
             {isLoading && (
-              <div className="flex justify-start mb-6">
-                <div className="flex items-center space-x-2 bg-white border border-slate-100 rounded-2xl px-4 py-3 shadow-sm">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                    <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                    <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" />
+              <div className="flex justify-start mb-6 animate-in fade-in slide-in-from-left-2 duration-300">
+                <div className="flex items-center space-x-4 bg-white/50 backdrop-blur border border-slate-100 rounded-2xl px-6 py-4 shadow-sm">
+                  <div className="flex space-x-1.5">
+                    <div className="w-2.5 h-2.5 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                    <div className="w-2.5 h-2.5 bg-violet-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                    <div className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce" />
                   </div>
-                  <span className="text-xs font-medium text-slate-400">OmniMind is thinking...</span>
+                  <span className="text-[10px] font-black text-indigo-600 tracking-[0.2em] uppercase">Processing Query</span>
                 </div>
               </div>
             )}
-            <div ref={chatEndRef} />
+            <div ref={chatEndRef} className="h-8" />
           </div>
         </div>
 
-        <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+        <div className="bg-gradient-to-t from-[#fcfdff] via-[#fcfdff] to-transparent pt-12 pb-4 z-10 sticky bottom-0">
+          <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+        </div>
       </main>
     </div>
   );

@@ -13,6 +13,9 @@ export interface ChatMessage {
   timestamp: number;
   sources?: GroundingSource[];
   isError?: boolean;
+  type?: 'text' | 'image' | 'audio';
+  imageUrl?: string;
+  audioData?: string; // Base64
 }
 
 export interface ChatSession {
@@ -24,9 +27,8 @@ export interface ChatSession {
 
 export enum AssistantMode {
   General = 'General Chat',
-  Creative = 'Creative Writing',
+  Artistic = 'Visionary Art',
   Technical = 'Technical Support',
-  Educational = 'Educational Help',
-  Productivity = 'Productivity',
-  Urdu = 'Urdu & Culture'
+  Urdu = 'Urdu & Culture',
+  Productivity = 'Productivity'
 }

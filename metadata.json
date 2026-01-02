@@ -1,5 +1,9 @@
 {
   "name": "OmniMind AI Assistant",
-  "description": "An advanced, multi-purpose AI assistant Created By Muhammad Ayan.Powered by gemini. Pro, supporting creative writing, technical analysis, coding, and multilingual cultural context including English and Urdu.",
-  "requestFramePermissions": []
+  "description": "An advanced, multi-purpose AI assistant Created By Muhammad Ayan. Powered by Gemini, supporting image generation, voice synthesis, and real-time search.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
 }
