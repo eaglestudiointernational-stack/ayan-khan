@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, Languages, Terminal, Palette, Briefcase, Globe, Mic, MicOff, Loader2, X, Image as ImageIcon } from 'lucide-react';
-import { AssistantMode } from '../types';
+import { Send, Sparkles, Languages, Terminal, Palette, Briefcase, Globe, Mic, X, Image as ImageIcon, Loader2, Bolt, ChevronDown } from 'lucide-react';
+import { AssistantMode, ImageSize } from '../types';
 
 interface ChatInputProps {
-  onSendMessage: (message: string, mode: AssistantMode, useSearch: boolean, imageContext?: string) => void;
+  onSendMessage: (message: string, mode: AssistantMode, useSearch: boolean, imageContext?: string, isFast?: boolean, imageSize?: ImageSize) => void;
   isLoading: boolean;
   imageContext?: string | null;
   onClearImageContext?: () => void;
@@ -14,6 +14,10 @@ declare global {
   interface Window {
     webkitSpeechRecognition: any;
     SpeechRecognition: any;
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
   }
 }
 
@@ -26,6 +30,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<AssistantMode>(AssistantMode.General);
   const [useSearch, setUseSearch] = useState(true);
+  const [isFast, setIsFast] = useState(false);
+  const [imageSize, setImageSize] = useState<ImageSize>("1K");
   const [isRecording, setIsRecording] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -51,10 +57,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [mode]);
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (input.trim() && !isLoading) {
-      onSendMessage(input.trim(), mode, useSearch, imageContext || undefined);
+      // Check for Pro Image API Key if in Artistic mode
+      if (mode === AssistantMode.Artistic || imageContext) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          await window.aistudio.openSelectKey();
+          // After returning, we assume key is selected and proceed
+        }
+      }
+
+      onSendMessage(input.trim(), mode, useSearch, imageContext || undefined, isFast, imageSize);
       setInput('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
@@ -93,24 +108,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
   return (
     <div className="max-w-4xl mx-auto px-4 pb-6 w-full">
       {imageContext && (
-        <div className="mb-4 animate-in slide-in-from-bottom-4 flex items-center space-x-3 bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100 shadow-sm">
-          <div className="relative group">
-            <img src={imageContext} className="w-16 h-16 object-cover rounded-xl shadow-lg border-2 border-white" alt="Context" />
-            <button 
-              onClick={onClearImageContext}
-              className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <X size={12} />
-            </button>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Image Remix Enabled</span>
-            <span className="text-xs text-slate-500 font-medium">Explain the changes you want to apply...</span>
+        <div className="mb-4 animate-in slide-in-from-bottom-4 flex items-center justify-between bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100 shadow-sm">
+          <div className="flex items-center space-x-3">
+            <div className="relative group">
+              <img src={imageContext} className="w-16 h-16 object-cover rounded-xl shadow-lg border-2 border-white" alt="Context" />
+              <button 
+                onClick={onClearImageContext}
+                className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Image Remix Enabled</span>
+              <span className="text-xs text-slate-500 font-medium">Explain the changes you want to apply...</span>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3 px-1">
+      <div className="flex flex-wrap items-center justify-between mb-3 gap-2 px-1">
         <div className="flex overflow-x-auto gap-2 no-scrollbar py-1">
           {Object.values(AssistantMode).map((m) => (
             <button
@@ -128,17 +145,50 @@ const ChatInput: React.FC<ChatInputProps> = ({
           ))}
         </div>
         
-        <button
-          onClick={() => setUseSearch(!useSearch)}
-          className={`flex-shrink-0 flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-            useSearch 
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-              : 'bg-slate-50 text-slate-400 border-slate-200'
-          }`}
-        >
-          <Globe size={14} className={useSearch ? 'animate-spin-slow' : ''} />
-          <span className="hidden sm:inline">{useSearch ? 'Search ON' : 'Search OFF'}</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          {mode === AssistantMode.Artistic && (
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl px-1 py-1">
+              {(['1K', '2K', '4K'] as ImageSize[]).map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setImageSize(size)}
+                  className={`px-3 py-1 rounded-lg text-[9px] font-black tracking-tighter transition-all ${
+                    imageSize === size 
+                      ? 'bg-indigo-600 text-white' 
+                      : 'text-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setIsFast(!isFast)}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+              isFast 
+                ? 'bg-amber-50 text-amber-600 border-amber-200 shadow-sm' 
+                : 'bg-white text-slate-400 border-slate-200'
+            }`}
+            title="Fast AI Responses (Lite Mode)"
+          >
+            <Bolt size={14} className={isFast ? 'fill-current' : ''} />
+            <span className="hidden sm:inline">{isFast ? 'Turbo ON' : 'Turbo OFF'}</span>
+          </button>
+
+          <button
+            onClick={() => setUseSearch(!useSearch)}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+              useSearch 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                : 'bg-white text-slate-400 border-slate-200'
+            }`}
+          >
+            <Globe size={14} className={useSearch ? 'animate-spin-slow' : ''} />
+            <span className="hidden sm:inline">{useSearch ? 'Search ON' : 'Search OFF'}</span>
+          </button>
+        </div>
       </div>
 
       <div className={`relative bg-white rounded-3xl shadow-2xl border-2 transition-all duration-300 group ${

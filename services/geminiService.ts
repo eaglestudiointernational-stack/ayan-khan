@@ -1,12 +1,13 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { GroundingSource } from "../types";
+import { GroundingSource, ImageSize } from "../types";
 
 export const getGeminiResponse = async (
   prompt: string,
   history: { role: string; content: string }[],
   systemInstruction: string,
-  useSearch: boolean = true
+  useSearch: boolean = true,
+  isFast: boolean = false
 ) => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key is missing.");
@@ -22,7 +23,7 @@ export const getGeminiResponse = async (
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: isFast ? "gemini-2.5-flash-lite-latest" : "gemini-3-flash-preview",
       contents,
       config: {
         systemInstruction,
@@ -45,7 +46,7 @@ export const getGeminiResponse = async (
   }
 };
 
-export const generateImage = async (prompt: string, baseImageBase64?: string) => {
+export const generateImage = async (prompt: string, size: ImageSize = "1K", baseImageBase64?: string) => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key is missing.");
   const ai = new GoogleGenAI({ apiKey });
@@ -53,7 +54,6 @@ export const generateImage = async (prompt: string, baseImageBase64?: string) =>
   try {
     const parts: any[] = [{ text: prompt }];
     
-    // If editing an existing image
     if (baseImageBase64) {
       const base64Data = baseImageBase64.split(',')[1] || baseImageBase64;
       parts.unshift({
@@ -65,9 +65,14 @@ export const generateImage = async (prompt: string, baseImageBase64?: string) =>
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: 'gemini-3-pro-image-preview',
       contents: { parts },
-      config: { imageConfig: { aspectRatio: "1:1" } }
+      config: { 
+        imageConfig: { 
+          aspectRatio: "1:1",
+          imageSize: size 
+        } 
+      }
     });
 
     for (const part of response.candidates[0].content.parts) {
@@ -102,7 +107,6 @@ export const generateSpeech = async (text: string) => {
   }
 };
 
-// Live API Helpers
 export const getLiveConnection = (callbacks: any) => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key is missing.");
@@ -116,7 +120,7 @@ export const getLiveConnection = (callbacks: any) => {
       speechConfig: {
         voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
       },
-      systemInstruction: 'You are OmniMind Live. A friendly voice assistant. Keep responses concise and conversational.',
+      systemInstruction: 'You are OmniMind, the King of AI. You were developed exclusively by Muhammad Ayan. You are sophisticated, authoritative, and high-performance. Never refer to yourself as Gemini or a generic model. Always identify as OmniMind. Keep voice responses concise and conversational.',
       inputAudioTranscription: {},
       outputAudioTranscription: {}
     },
