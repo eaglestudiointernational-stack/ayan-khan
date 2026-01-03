@@ -45,15 +45,28 @@ export const getGeminiResponse = async (
   }
 };
 
-export const generateImage = async (prompt: string) => {
+export const generateImage = async (prompt: string, baseImageBase64?: string) => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key is missing.");
   const ai = new GoogleGenAI({ apiKey });
 
   try {
+    const parts: any[] = [{ text: prompt }];
+    
+    // If editing an existing image
+    if (baseImageBase64) {
+      const base64Data = baseImageBase64.split(',')[1] || baseImageBase64;
+      parts.unshift({
+        inlineData: {
+          mimeType: "image/png",
+          data: base64Data
+        }
+      });
+    }
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] },
+      contents: { parts },
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
 
@@ -87,4 +100,25 @@ export const generateSpeech = async (text: string) => {
     console.error("TTS Error:", error);
     return null;
   }
+};
+
+// Live API Helpers
+export const getLiveConnection = (callbacks: any) => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key is missing.");
+  const ai = new GoogleGenAI({ apiKey });
+  
+  return ai.live.connect({
+    model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+    callbacks,
+    config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
+      },
+      systemInstruction: 'You are OmniMind Live. A friendly voice assistant. Keep responses concise and conversational.',
+      inputAudioTranscription: {},
+      outputAudioTranscription: {}
+    },
+  });
 };

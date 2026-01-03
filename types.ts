@@ -32,3 +32,10 @@ export enum AssistantMode {
   Urdu = 'Urdu & Culture',
   Productivity = 'Productivity'
 }
+
+export interface LiveState {
+  isActive: boolean;
+  isConnecting: boolean;
+  transcript: string;
+  audioLevel: number;
+}
