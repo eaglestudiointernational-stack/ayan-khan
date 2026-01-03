@@ -14,10 +14,8 @@ declare global {
   interface Window {
     webkitSpeechRecognition: any;
     SpeechRecognition: any;
-    aistudio: {
-      hasSelectedApiKey: () => Promise<boolean>;
-      openSelectKey: () => Promise<void>;
-    };
+    // Note: aistudio is intentionally omitted here to avoid conflicts with existing global AIStudio declarations.
+    // It is assumed to be available in the global execution context as per guidelines.
   }
 }
 
@@ -62,9 +60,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (input.trim() && !isLoading) {
       // Check for Pro Image API Key if in Artistic mode
       if (mode === AssistantMode.Artistic || imageContext) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
+        // Access aistudio via window casting to avoid TypeScript errors with existing global types
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
         if (!hasKey) {
-          await window.aistudio.openSelectKey();
+          await (window as any).aistudio.openSelectKey();
           // After returning, we assume key is selected and proceed
         }
       }

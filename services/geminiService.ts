@@ -9,9 +9,8 @@ export const getGeminiResponse = async (
   useSearch: boolean = true,
   isFast: boolean = false
 ) => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key is missing.");
-  const ai = new GoogleGenAI({ apiKey });
+  // Always initialize right before making an API call using process.env.API_KEY directly
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const contents = [
     ...history.map(msg => ({
@@ -23,7 +22,8 @@ export const getGeminiResponse = async (
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: isFast ? "gemini-2.5-flash-lite-latest" : "gemini-3-flash-preview",
+      // Corrected flash lite model alias based on guidelines
+      model: isFast ? "gemini-flash-lite-latest" : "gemini-3-flash-preview",
       contents,
       config: {
         systemInstruction,
@@ -47,9 +47,8 @@ export const getGeminiResponse = async (
 };
 
 export const generateImage = async (prompt: string, size: ImageSize = "1K", baseImageBase64?: string) => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key is missing.");
-  const ai = new GoogleGenAI({ apiKey });
+  // Always initialize right before making an API call using process.env.API_KEY directly
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
     const parts: any[] = [{ text: prompt }];
@@ -64,8 +63,12 @@ export const generateImage = async (prompt: string, size: ImageSize = "1K", base
       });
     }
 
+    // Guidelines: Use 'gemini-2.5-flash-image' for default generation.
+    // Upgrade to 'gemini-3-pro-image-preview' for high-quality (2K/4K) requests.
+    const model = (size === '2K' || size === '4K') ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
+      model,
       contents: { parts },
       config: { 
         imageConfig: { 
@@ -76,6 +79,7 @@ export const generateImage = async (prompt: string, size: ImageSize = "1K", base
     });
 
     for (const part of response.candidates[0].content.parts) {
+      // Find the image part as recommended in guidelines
       if (part.inlineData) {
         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
@@ -87,9 +91,8 @@ export const generateImage = async (prompt: string, size: ImageSize = "1K", base
 };
 
 export const generateSpeech = async (text: string) => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key is missing.");
-  const ai = new GoogleGenAI({ apiKey });
+  // Always initialize right before making an API call using process.env.API_KEY directly
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
     const response = await ai.models.generateContent({
@@ -100,6 +103,7 @@ export const generateSpeech = async (text: string) => {
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
       },
     });
+    // Correct way to extract audio data from response
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   } catch (error: any) {
     console.error("TTS Error:", error);
@@ -108,9 +112,8 @@ export const generateSpeech = async (text: string) => {
 };
 
 export const getLiveConnection = (callbacks: any) => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key is missing.");
-  const ai = new GoogleGenAI({ apiKey });
+  // Always initialize right before making an API call using process.env.API_KEY directly
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   return ai.live.connect({
     model: 'gemini-2.5-flash-native-audio-preview-09-2025',
