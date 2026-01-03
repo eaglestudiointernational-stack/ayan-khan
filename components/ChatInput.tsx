@@ -1,21 +1,38 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, Languages, Terminal, Palette, Briefcase, Globe, Mic, X, Image as ImageIcon, Loader2, Bolt, ChevronDown, Brain } from 'lucide-react';
-import { AssistantMode, ImageSize } from '../types';
+import { Send, Sparkles, Languages, Terminal, Palette, Briefcase, Globe, Mic, X, Image as ImageIcon, Loader2, Bolt, ChevronDown, Brain, Video, Clapperboard } from 'lucide-react';
+import { AssistantMode, ImageSize, VideoAspectRatio, VideoResolution } from '../types';
 
 interface ChatInputProps {
-  onSendMessage: (message: string, mode: AssistantMode, useSearch: boolean, imageContext?: string, isFast?: boolean, imageSize?: ImageSize, isThinking?: boolean) => void;
+  onSendMessage: (
+    message: string, 
+    mode: AssistantMode, 
+    useSearch: boolean, 
+    options: {
+      imageContext?: string, 
+      isFast?: boolean, 
+      imageSize?: ImageSize, 
+      isThinking?: boolean,
+      videoRatio?: VideoAspectRatio,
+      videoRes?: VideoResolution
+    }
+  ) => void;
   isLoading: boolean;
   imageContext?: string | null;
   onClearImageContext?: () => void;
+}
+
+// Define the expected AIStudio interface to satisfy TypeScript requirements
+interface AIStudio {
+  hasSelectedApiKey: () => Promise<boolean>;
+  openSelectKey: () => Promise<void>;
 }
 
 declare global {
   interface Window {
     webkitSpeechRecognition: any;
     SpeechRecognition: any;
-    // Note: aistudio is intentionally omitted here to avoid conflicts with existing global AIStudio declarations.
-    // It is assumed to be available in the global execution context as per guidelines.
+    aistudio: AIStudio;
   }
 }
 
@@ -31,6 +48,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [isFast, setIsFast] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [imageSize, setImageSize] = useState<ImageSize>("1K");
+  const [videoRatio, setVideoRatio] = useState<VideoAspectRatio>("16:9");
+  const [videoRes, setVideoRes] = useState<VideoResolution>("720p");
   const [isRecording, setIsRecording] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -59,17 +78,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (input.trim() && !isLoading) {
-      // Check for Pro Image API Key if in Artistic mode
-      if (mode === AssistantMode.Artistic || imageContext) {
-        // Access aistudio via window casting to avoid TypeScript errors with existing global types
-        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+      if (mode === AssistantMode.Artistic || mode === AssistantMode.Cinema || imageContext) {
+        // Ensure API key is selected for paid features
+        const hasKey = await window.aistudio.hasSelectedApiKey();
         if (!hasKey) {
-          await (window as any).aistudio.openSelectKey();
-          // After returning, we assume key is selected and proceed
+          await window.aistudio.openSelectKey();
         }
       }
 
-      onSendMessage(input.trim(), mode, useSearch, imageContext || undefined, isFast, imageSize, isThinking);
+      onSendMessage(input.trim(), mode, useSearch, {
+        imageContext: imageContext || undefined,
+        isFast,
+        imageSize,
+        isThinking,
+        videoRatio,
+        videoRes
+      });
       setInput('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
@@ -100,6 +124,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const modeIcons = {
     [AssistantMode.General]: <Sparkles size={16} />,
     [AssistantMode.Artistic]: <Palette size={16} />,
+    [AssistantMode.Cinema]: <Clapperboard size={16} />,
     [AssistantMode.Technical]: <Terminal size={16} />,
     [AssistantMode.Urdu]: <Languages size={16} />,
     [AssistantMode.Productivity]: <Briefcase size={16} />,
@@ -120,8 +145,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               </button>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Image Remix Enabled</span>
-              <span className="text-xs text-slate-500 font-medium">Explain the changes you want to apply...</span>
+              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Visual Remix Enabled</span>
+              <span className="text-xs text-slate-500 font-medium">Explain the transition you want to see...</span>
             </div>
           </div>
         </div>
@@ -164,37 +189,42 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </div>
           )}
 
-          {/* Deep Thought Toggle */}
+          {mode === AssistantMode.Cinema && (
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1 space-x-2">
+               <select 
+                 value={videoRatio} 
+                 onChange={(e) => setVideoRatio(e.target.value as VideoAspectRatio)}
+                 className="bg-transparent text-[9px] font-black border-none focus:ring-0 uppercase tracking-widest text-indigo-600"
+               >
+                 <option value="16:9">16:9</option>
+                 <option value="9:16">9:16</option>
+               </select>
+               <div className="w-px h-3 bg-slate-200" />
+               <select 
+                 value={videoRes} 
+                 onChange={(e) => setVideoRes(e.target.value as VideoResolution)}
+                 className="bg-transparent text-[9px] font-black border-none focus:ring-0 uppercase tracking-widest text-indigo-600"
+               >
+                 <option value="720p">720p</option>
+                 <option value="1080p">1080p</option>
+               </select>
+            </div>
+          )}
+
           <button
             onClick={() => {
               setIsThinking(!isThinking);
-              if (!isThinking) setIsFast(false); // Mutual exclusivity for clarity
+              if (!isThinking) setIsFast(false); 
             }}
             className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
               isThinking 
                 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm shadow-indigo-100' 
                 : 'bg-white text-slate-400 border-slate-200'
             }`}
-            title="Deep Thought Mode (High Reasoning)"
+            title="Deep Thought Mode"
           >
             <Brain size={14} className={isThinking ? 'fill-current' : ''} />
             <span className="hidden sm:inline">{isThinking ? 'Think ON' : 'Think OFF'}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setIsFast(!isFast);
-              if (!isFast) setIsThinking(false); // Mutual exclusivity
-            }}
-            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-              isFast 
-                ? 'bg-amber-50 text-amber-600 border-amber-200 shadow-sm' 
-                : 'bg-white text-slate-400 border-slate-200'
-            }`}
-            title="Fast AI Responses (Lite Mode)"
-          >
-            <Bolt size={14} className={isFast ? 'fill-current' : ''} />
-            <span className="hidden sm:inline">{isFast ? 'Turbo ON' : 'Turbo OFF'}</span>
           </button>
 
           <button
@@ -220,7 +250,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isRecording ? "Listening..." : imageContext ? "How should I remix this image?" : `Message OmniMind (${mode})...`}
+          placeholder={isRecording ? "Listening..." : mode === AssistantMode.Cinema ? "Describe your cinematic vision..." : `Message OmniMind (${mode})...`}
           className="w-full px-5 py-5 pr-28 bg-transparent border-none focus:ring-0 resize-none max-h-48 text-slate-800 placeholder-slate-400 font-medium text-base leading-relaxed"
           disabled={isLoading}
         />

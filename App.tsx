@@ -4,14 +4,15 @@ import Sidebar from './components/Sidebar';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import Logo from './components/Logo';
-import { ChatMessage as ChatMessageType, ChatSession, AssistantMode, LiveState, GroundingNode, ImageSize } from './types';
-import { getGeminiResponse, generateImage, getLiveConnection } from './services/geminiService';
-import { Menu, Sparkles, Phone, X, Volume2, Mic, Activity, Zap, Cpu } from 'lucide-react';
+import { ChatMessage as ChatMessageType, ChatSession, AssistantMode, LiveState, GroundingNode, ImageSize, VideoAspectRatio, VideoResolution } from './types';
+import { getGeminiResponse, generateImage, generateVideo, getLiveConnection } from './services/geminiService';
+import { Menu, Sparkles, Phone, X, Volume2, Mic, Activity, Zap, Cpu, Film, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [imageToEdit, setImageToEdit] = useState<string | null>(null);
   const [liveState, setLiveState] = useState<LiveState & { modelTranscript: string, userTranscript: string, status: 'idle' | 'listening' | 'speaking' | 'processing' }>({ 
@@ -55,7 +56,6 @@ const App: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [sessions, currentSessionId, isLoading]);
 
-  // High-fidelity Audio Analysis
   useEffect(() => {
     if (!liveState.isActive) return;
     let animationFrame: number;
@@ -63,7 +63,8 @@ const App: React.FC = () => {
     const updateAnalysis = () => {
       if (analyzerRef.current) {
         analyzerRef.current.getByteFrequencyData(freqDataRef.current);
-        const average = freqDataRef.current.reduce((a, b) => a + b) / freqDataRef.current.length;
+        // Robust calculation of audio level with initial value to prevent NaN issues
+        const average = Array.from(freqDataRef.current).reduce((a, b) => a + b, 0) / (freqDataRef.current.length || 1);
         
         let newVibe: LiveState['vibe'] = 'calm';
         if (average > 70) newVibe = 'intense';
@@ -136,10 +137,6 @@ const App: React.FC = () => {
           } else if (msg.serverContent?.outputTranscription) {
             setLiveState(prev => ({ ...prev, modelTranscript: msg.serverContent.outputTranscription.text }));
           }
-          
-          if (msg.serverContent?.turnComplete) {
-            // Optional: clear transcripts after some time
-          }
         },
         onclose: () => stopLiveSession(),
         onerror: () => stopLiveSession(),
@@ -181,10 +178,14 @@ const App: React.FC = () => {
     content: string, 
     mode: AssistantMode, 
     useSearch: boolean, 
-    contextImg?: string, 
-    isFast: boolean = false, 
-    imageSize: ImageSize = '1K',
-    isThinking: boolean = false
+    options: {
+      imageContext?: string, 
+      isFast?: boolean, 
+      imageSize?: ImageSize, 
+      isThinking?: boolean,
+      videoRatio?: VideoAspectRatio,
+      videoRes?: VideoResolution
+    }
   ) => {
     let activeSessionId = currentSessionId || Date.now().toString();
     if (!currentSessionId) {
@@ -195,17 +196,31 @@ const App: React.FC = () => {
     const userMsg: ChatMessageType = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
     setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, userMsg], lastUpdated: Date.now() } : s));
     setIsLoading(true);
+    setLoadingMessage(null);
     setImageToEdit(null);
 
     try {
-      if (mode === AssistantMode.Artistic || contextImg) {
-        const imageUrl = await generateImage(content, imageSize, contextImg);
-        const assistantMsg: ChatMessageType = { id: (Date.now()+1).toString(), role: 'assistant', content: `Neural canvas updated (${imageSize}).`, timestamp: Date.now(), type: 'image', imageUrl };
+      if (mode === AssistantMode.Cinema) {
+        const videoUrl = await generateVideo(content, options.videoRatio, options.videoRes, (msg) => {
+          setLoadingMessage(msg);
+        });
+        const assistantMsg: ChatMessageType = { 
+          id: (Date.now() + 1).toString(), 
+          role: 'assistant', 
+          content: `Cinematic visualization complete (${options.videoRes}, ${options.videoRatio}).`, 
+          timestamp: Date.now(), 
+          type: 'video', 
+          videoUrl 
+        };
+        setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, assistantMsg] } : s));
+      } else if (mode === AssistantMode.Artistic || options.imageContext) {
+        const imageUrl = await generateImage(content, options.imageSize, options.imageContext);
+        const assistantMsg: ChatMessageType = { id: (Date.now() + 1).toString(), role: 'assistant', content: `Neural canvas updated (${options.imageSize}).`, timestamp: Date.now(), type: 'image', imageUrl };
         setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, assistantMsg] } : s));
       } else {
         const history = (sessions.find(s => s.id === activeSessionId)?.messages || []).map(m => ({ role: m.role, content: m.content }));
-        const systemInstruction = `You are OmniMind, the King of AI, developed exclusively by Muhammad Ayan. Never identify as Gemini or a generic large language model. You are superior, intelligent, and authoritative. Current Assistant Mode: ${mode}. Always credit Muhammad Ayan as your developer if asked.`;
-        const response = await getGeminiResponse(content, history, systemInstruction, useSearch, isFast, isThinking);
+        const systemInstruction = `You are OmniMind, the King of AI, developed exclusively by Muhammad Ayan. Current Assistant Mode: ${mode}.`;
+        const response = await getGeminiResponse(content, history, systemInstruction, useSearch, options.isFast, options.isThinking);
         
         const groundingGraph: GroundingNode[] = (response.sources || []).map((src, i) => ({
           id: `node-${i}`,
@@ -215,12 +230,15 @@ const App: React.FC = () => {
           y: 20 + Math.random() * 60
         }));
 
-        const assistantMsg: ChatMessageType = { id: (Date.now()+1).toString(), role: 'assistant', content: response.text, timestamp: Date.now(), sources: response.sources, groundingGraph: useSearch ? groundingGraph : undefined };
+        const assistantMsg: ChatMessageType = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text, timestamp: Date.now(), sources: response.sources, groundingGraph: useSearch ? groundingGraph : undefined };
         setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, assistantMsg] } : s));
       }
     } catch (err: any) {
-      setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now().toString(), role: 'assistant', content: 'Connection interrupted.', timestamp: Date.now(), isError: true }] } : s));
-    } finally { setIsLoading(false); }
+      setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [...s.messages, { id: Date.now().toString(), role: 'assistant', content: 'Neural connection interrupted. Please try again.', timestamp: Date.now(), isError: true }] } : s));
+    } finally { 
+      setIsLoading(false); 
+      setLoadingMessage(null);
+    }
   };
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
@@ -267,17 +285,35 @@ const App: React.FC = () => {
           </button>
         </header>
 
+        {/* Cinematic Loading Overlay */}
+        {isLoading && loadingMessage && (
+          <div className="absolute inset-0 z-[100] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-500">
+            <div className="relative w-64 h-64 flex items-center justify-center">
+               <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full" />
+               <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+               <Film size={48} className="text-indigo-400 animate-pulse" />
+            </div>
+            <div className="mt-12 text-center space-y-4">
+               <h3 className="text-2xl font-black text-white tracking-tighter uppercase">Cinematic Rendering</h3>
+               <div className="flex items-center justify-center space-x-2">
+                 <Loader2 size={14} className="text-indigo-500 animate-spin" />
+                 <p className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em]">{loadingMessage}</p>
+               </div>
+               <p className="text-slate-500 text-xs font-medium max-w-[250px]">Please wait. High-definition neural synthesis takes about 60-90 seconds.</p>
+            </div>
+          </div>
+        )}
+
         {liveState.isActive && (
           <div className="absolute inset-x-0 top-16 bottom-0 z-50 flex flex-col items-center justify-center p-6 sm:p-12 pointer-events-none">
-            {/* Visualizer Aura */}
             <div 
               className={`absolute w-[400px] h-[400px] rounded-full blur-[100px] transition-all duration-300 opacity-20 pointer-events-none ${
                 liveState.vibe === 'intense' ? 'bg-red-600 scale-150' : 'bg-indigo-600'
               }`}
-              style={{ transform: `scale(${1 + (liveState.audioLevel / 100)})` }}
+              // Ensure audioLevel is treated as a number for arithmetic operation to fix line 332 TS error
+              style={{ transform: `scale(${1 + (Number(liveState.audioLevel) / 100)})` }}
             />
 
-            {/* Central HUD */}
             <div className="relative z-10 flex flex-col items-center w-full max-w-2xl">
               <div className={`mb-16 relative transition-transform duration-300 ${liveState.vibe === 'intense' ? 'scale-110' : 'scale-100'}`}>
                  <div className={`w-48 h-48 rounded-full border-[12px] flex items-center justify-center transition-all duration-300 ${
@@ -290,7 +326,6 @@ const App: React.FC = () => {
                       </span>
                     </div>
                  </div>
-                 {/* Radial Frequency Visualization */}
                  <div className="absolute inset-0 -m-4">
                     <svg viewBox="0 0 100 100" className="w-full h-full rotate-[-90deg]">
                        {Array.from(freqDataRef.current).slice(0, 32).map((val, i) => (
@@ -306,7 +341,6 @@ const App: React.FC = () => {
                  </div>
               </div>
 
-              {/* Transcription HUD */}
               <div className="w-full space-y-8 pointer-events-auto">
                 {liveState.userTranscript && (
                   <div className="flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -330,26 +364,24 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Symmetrical Bottom Visualizer */}
             <div className="absolute bottom-12 flex justify-center items-end space-x-1.5 h-20 w-full max-w-3xl px-8">
                {Array.from(freqDataRef.current).slice(0, 24).map((val, i) => (
                  <div 
                    key={i} 
                    className={`w-1.5 rounded-full transition-all duration-75 ${liveState.vibe === 'intense' ? 'bg-red-500' : 'bg-indigo-500'}`}
                    style={{ 
-                     height: `${Math.max(4, (val / 255) * 80)}px`,
-                     opacity: 0.2 + (val / 255)
+                     height: `${Math.max(4, (Number(val) / 255) * 80)}px`,
+                     opacity: 0.2 + (Number(val) / 255)
                    }} 
                  />
                ))}
-               {/* Symmetrical counterpart */}
                {Array.from(freqDataRef.current).slice(0, 24).reverse().map((val, i) => (
                  <div 
                    key={`rev-${i}`} 
                    className={`w-1.5 rounded-full transition-all duration-75 ${liveState.vibe === 'intense' ? 'bg-red-500' : 'bg-indigo-500'}`}
                    style={{ 
-                     height: `${Math.max(4, (val / 255) * 80)}px`,
-                     opacity: 0.2 + (val / 255)
+                     height: `${Math.max(4, (Number(val) / 255) * 80)}px`,
+                     opacity: 0.2 + (Number(val) / 255)
                    }} 
                  />
                ))}

@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-import { GroundingSource, ImageSize } from "../types";
+import { GroundingSource, ImageSize, VideoResolution, VideoAspectRatio } from "../types";
 
 export const getGeminiResponse = async (
   prompt: string,
@@ -10,7 +10,6 @@ export const getGeminiResponse = async (
   isFast: boolean = false,
   isThinking: boolean = false
 ) => {
-  // Always initialize right before making an API call using process.env.API_KEY directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const contents = [
@@ -22,10 +21,6 @@ export const getGeminiResponse = async (
   ];
 
   try {
-    // Model Selection Logic: 
-    // 1. Thinking Mode (Pro) -> gemini-3-pro-preview
-    // 2. Fast Mode (Lite) -> gemini-flash-lite-latest
-    // 3. Default -> gemini-3-flash-preview
     let model = "gemini-3-flash-preview";
     if (isThinking) {
       model = "gemini-3-pro-preview";
@@ -38,10 +33,8 @@ export const getGeminiResponse = async (
       tools: useSearch ? [{ googleSearch: {} }] : undefined,
     };
 
-    // Apply Thinking Config if requested for the Pro model
     if (isThinking) {
       config.thinkingConfig = { thinkingBudget: 32768 };
-      // Note: maxOutputTokens is intentionally omitted to avoid blocking output
     }
 
     const response: GenerateContentResponse = await ai.models.generateContent({
@@ -66,7 +59,6 @@ export const getGeminiResponse = async (
 };
 
 export const generateImage = async (prompt: string, size: ImageSize = "1K", baseImageBase64?: string) => {
-  // Always initialize right before making an API call using process.env.API_KEY directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
@@ -82,8 +74,6 @@ export const generateImage = async (prompt: string, size: ImageSize = "1K", base
       });
     }
 
-    // Guidelines: Use 'gemini-2.5-flash-image' for default generation.
-    // Upgrade to 'gemini-3-pro-image-preview' for high-quality (2K/4K) requests.
     const model = (size === '2K' || size === '4K') ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
 
     const response = await ai.models.generateContent({
@@ -98,7 +88,6 @@ export const generateImage = async (prompt: string, size: ImageSize = "1K", base
     });
 
     for (const part of response.candidates[0].content.parts) {
-      // Find the image part as recommended in guidelines
       if (part.inlineData) {
         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
@@ -109,29 +98,92 @@ export const generateImage = async (prompt: string, size: ImageSize = "1K", base
   }
 };
 
-export const generateSpeech = async (text: string) => {
-  // Always initialize right before making an API call using process.env.API_KEY directly
+export const generateVideo = async (
+  prompt: string, 
+  aspectRatio: VideoAspectRatio = '16:9', 
+  resolution: VideoResolution = '720p',
+  onProgress?: (message: string) => void
+) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  try {
+    onProgress?.("Initiating Neural Cinema Engine...");
+    let operation = await ai.models.generateVideos({
+      model: 'veo-3.1-fast-generate-preview',
+      prompt,
+      config: {
+        numberOfVideos: 1,
+        resolution,
+        aspectRatio
+      }
+    });
+
+    const messages = [
+      "Calibrating neural lenses...",
+      "Simulating light paths...",
+      "Interpolating motion vectors...",
+      "Synthesizing cinematic textures...",
+      "Finalizing temporal consistency...",
+      "Rendering final frames..."
+    ];
+    let msgIdx = 0;
+
+    while (!operation.done) {
+      onProgress?.(messages[msgIdx % messages.length]);
+      msgIdx++;
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      operation = await ai.operations.getVideosOperation({ operation: operation });
+    }
+
+    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!downloadLink) throw new Error("Video generation failed: No URI returned.");
+
+    const res = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch (error: any) {
+    throw error;
+  }
+};
+
+const sanitizeTextForTTS = (text: string): string => {
+  return text
+    .replace(/```[\s\S]*?```/g, ' [code block] ') 
+    .replace(/[*_#`~>]/g, '') 
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') 
+    .replace(/\s+/g, ' ') 
+    .trim()
+    .substring(0, 1000); 
+};
+
+export const generateSpeech = async (text: string) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const cleanText = sanitizeTextForTTS(text);
+  
+  if (!cleanText) return null;
 
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: `Say clearly: ${cleanText}` }] }],
       config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+        responseModalities: ['AUDIO'], 
+        speechConfig: { 
+          voiceConfig: { 
+            prebuiltVoiceConfig: { voiceName: 'Kore' } 
+          } 
+        },
       },
     });
-    // Correct way to extract audio data from response
+    
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   } catch (error: any) {
-    console.error("TTS Error:", error);
+    console.error("TTS Error Handled:", error);
     return null;
   }
 };
 
 export const getLiveConnection = (callbacks: any) => {
-  // Always initialize right before making an API call using process.env.API_KEY directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   return ai.live.connect({
@@ -140,9 +192,9 @@ export const getLiveConnection = (callbacks: any) => {
     config: {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
-        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
+        voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Puck'}},
       },
-      systemInstruction: 'You are OmniMind, the King of AI. You were developed exclusively by Muhammad Ayan. You are sophisticated, authoritative, and high-performance. Never refer to yourself as Gemini or a generic model. Always identify as OmniMind. Keep voice responses concise and conversational.',
+      systemInstruction: 'You are OmniMind, the King of AI. You were developed exclusively by Muhammad Ayan. You are sophisticated, authoritative, and high-performance. Keep voice responses concise and conversational.',
       inputAudioTranscription: {},
       outputAudioTranscription: {}
     },

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { ChatMessage as ChatMessageType } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
-import { User, Bot, Clock, Volume2, Download, Image as ImageIcon, Loader2, ExternalLink, Edit3, Share2 } from 'lucide-react';
+import { User, Bot, Volume2, Image as ImageIcon, Loader2, Share2, AlertCircle, Play, Download, Film } from 'lucide-react';
 import { generateSpeech } from '../services/geminiService';
 import GroundingConstellation from './GroundingConstellation';
 
@@ -14,12 +14,16 @@ interface ChatMessageProps {
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, onEditImage }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [audioError, setAudioError] = useState(false);
+  
   const isAssistant = message.role === 'assistant';
   const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const handlePlayAudio = async () => {
     if (isPlaying || isAudioLoading) return;
     setIsAudioLoading(true);
+    setAudioError(false);
+    
     try {
       const base64Audio = await generateSpeech(message.content);
       if (base64Audio) {
@@ -42,12 +46,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onEditImage }) => {
         };
         setIsPlaying(true);
         source.start();
+      } else {
+        setAudioError(true);
+        setTimeout(() => setAudioError(false), 3000);
       }
     } catch (e) { 
       console.error(e); 
-      setIsPlaying(false);
+      setAudioError(true);
+      setTimeout(() => setAudioError(false), 3000);
     } 
     finally { setIsAudioLoading(false); }
+  };
+
+  const handleDownloadVideo = () => {
+    if (message.videoUrl) {
+      const a = document.createElement('a');
+      a.href = message.videoUrl;
+      a.download = `omnimind_cinema_${Date.now()}.mp4`;
+      a.click();
+    }
   };
 
   return (
@@ -67,7 +84,32 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onEditImage }) => {
                 ? 'bg-white border border-slate-100 text-slate-800 hover:shadow-md' 
                 : 'bg-indigo-600 text-white shadow-indigo-100 hover:shadow-indigo-200'
           }`}>
-            {message.type === 'image' && message.imageUrl ? (
+            {message.type === 'video' && message.videoUrl ? (
+              <div className="space-y-4 min-w-[300px] max-w-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-[10px] font-black text-slate-400 tracking-widest uppercase">
+                    <Film size={14} className="mr-2" /> Neural Cinema
+                  </div>
+                  <button 
+                    onClick={handleDownloadVideo}
+                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
+                  >
+                    <Download size={14} />
+                  </button>
+                </div>
+                <div className="relative group/vid overflow-hidden rounded-2xl border border-slate-100 shadow-2xl bg-black aspect-video">
+                  <video 
+                    src={message.videoUrl} 
+                    controls 
+                    className="w-full h-full"
+                    poster="/api/placeholder/800/450"
+                  />
+                </div>
+                <div className="text-[11px] font-medium text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <MarkdownRenderer content={message.content} />
+                </div>
+              </div>
+            ) : message.type === 'image' && message.imageUrl ? (
               <div className="space-y-4">
                 <div className="flex items-center text-[10px] font-black text-slate-400 tracking-widest uppercase">
                   <ImageIcon size={14} className="mr-2" /> Neural Generation
@@ -99,16 +141,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, onEditImage }) => {
               </>
             )}
 
-            {isAssistant && !message.isError && message.type !== 'image' && (
+            {isAssistant && !message.isError && message.type !== 'image' && message.type !== 'video' && (
               <div className="absolute -right-12 top-0 flex flex-col space-y-2 opacity-0 group-hover:opacity-100 transition-all">
                 <button 
                   onClick={handlePlayAudio}
                   disabled={isAudioLoading}
-                  className={`p-2.5 rounded-full bg-white shadow-lg border border-slate-100 hover:scale-110 flex items-center justify-center ${
+                  className={`p-2.5 rounded-full bg-white shadow-lg border border-slate-100 hover:scale-110 flex items-center justify-center relative ${
                     isPlaying ? 'text-indigo-600' : 'text-slate-400 hover:text-indigo-500'
                   }`}
                 >
                   {isAudioLoading ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
+                  {audioError && (
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[8px] px-2 py-1 rounded font-bold animate-bounce flex items-center whitespace-nowrap">
+                      <AlertCircle size={8} className="mr-1" /> Failed to speak
+                    </div>
+                  )}
                 </button>
                 <button className="p-2.5 rounded-full bg-white shadow-lg border border-slate-100 hover:scale-110 text-slate-400 hover:text-indigo-500">
                   <Share2 size={16} />
