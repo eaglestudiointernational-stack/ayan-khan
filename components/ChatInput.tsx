@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, Languages, Terminal, Palette, Briefcase, Globe, Mic, X, Image as ImageIcon, Loader2, Bolt, ChevronDown } from 'lucide-react';
+import { Send, Sparkles, Languages, Terminal, Palette, Briefcase, Globe, Mic, X, Image as ImageIcon, Loader2, Bolt, ChevronDown, Brain } from 'lucide-react';
 import { AssistantMode, ImageSize } from '../types';
 
 interface ChatInputProps {
-  onSendMessage: (message: string, mode: AssistantMode, useSearch: boolean, imageContext?: string, isFast?: boolean, imageSize?: ImageSize) => void;
+  onSendMessage: (message: string, mode: AssistantMode, useSearch: boolean, imageContext?: string, isFast?: boolean, imageSize?: ImageSize, isThinking?: boolean) => void;
   isLoading: boolean;
   imageContext?: string | null;
   onClearImageContext?: () => void;
@@ -29,6 +29,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [mode, setMode] = useState<AssistantMode>(AssistantMode.General);
   const [useSearch, setUseSearch] = useState(true);
   const [isFast, setIsFast] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [imageSize, setImageSize] = useState<ImageSize>("1K");
   const [isRecording, setIsRecording] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,7 +69,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       }
 
-      onSendMessage(input.trim(), mode, useSearch, imageContext || undefined, isFast, imageSize);
+      onSendMessage(input.trim(), mode, useSearch, imageContext || undefined, isFast, imageSize, isThinking);
       setInput('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
@@ -163,8 +164,28 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </div>
           )}
 
+          {/* Deep Thought Toggle */}
           <button
-            onClick={() => setIsFast(!isFast)}
+            onClick={() => {
+              setIsThinking(!isThinking);
+              if (!isThinking) setIsFast(false); // Mutual exclusivity for clarity
+            }}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+              isThinking 
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm shadow-indigo-100' 
+                : 'bg-white text-slate-400 border-slate-200'
+            }`}
+            title="Deep Thought Mode (High Reasoning)"
+          >
+            <Brain size={14} className={isThinking ? 'fill-current' : ''} />
+            <span className="hidden sm:inline">{isThinking ? 'Think ON' : 'Think OFF'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsFast(!isFast);
+              if (!isFast) setIsThinking(false); // Mutual exclusivity
+            }}
             className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
               isFast 
                 ? 'bg-amber-50 text-amber-600 border-amber-200 shadow-sm' 

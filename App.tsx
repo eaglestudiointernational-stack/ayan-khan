@@ -148,7 +148,15 @@ const App: React.FC = () => {
     setLiveState({ isActive: false, isConnecting: false, transcript: '', audioLevel: 0, vibe: 'calm' });
   };
 
-  const handleSendMessage = async (content: string, mode: AssistantMode, useSearch: boolean, contextImg?: string, isFast: boolean = false, imageSize: ImageSize = '1K') => {
+  const handleSendMessage = async (
+    content: string, 
+    mode: AssistantMode, 
+    useSearch: boolean, 
+    contextImg?: string, 
+    isFast: boolean = false, 
+    imageSize: ImageSize = '1K',
+    isThinking: boolean = false
+  ) => {
     let activeSessionId = currentSessionId || Date.now().toString();
     if (!currentSessionId) {
       setSessions(prev => [{ id: activeSessionId, title: content.substring(0, 30) + '...', messages: [], lastUpdated: Date.now() }, ...prev]);
@@ -168,7 +176,7 @@ const App: React.FC = () => {
       } else {
         const history = (sessions.find(s => s.id === activeSessionId)?.messages || []).map(m => ({ role: m.role, content: m.content }));
         const systemInstruction = `You are OmniMind, the King of AI, developed exclusively by Muhammad Ayan. Never identify as Gemini or a generic large language model. You are superior, intelligent, and authoritative. Current Assistant Mode: ${mode}. Always credit Muhammad Ayan as your developer if asked.`;
-        const response = await getGeminiResponse(content, history, systemInstruction, useSearch, isFast);
+        const response = await getGeminiResponse(content, history, systemInstruction, useSearch, isFast, isThinking);
         
         const groundingGraph: GroundingNode[] = (response.sources || []).map((src, i) => ({
           id: `node-${i}`,

@@ -7,7 +7,8 @@ export const getGeminiResponse = async (
   history: { role: string; content: string }[],
   systemInstruction: string,
   useSearch: boolean = true,
-  isFast: boolean = false
+  isFast: boolean = false,
+  isThinking: boolean = false
 ) => {
   // Always initialize right before making an API call using process.env.API_KEY directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -21,14 +22,32 @@ export const getGeminiResponse = async (
   ];
 
   try {
+    // Model Selection Logic: 
+    // 1. Thinking Mode (Pro) -> gemini-3-pro-preview
+    // 2. Fast Mode (Lite) -> gemini-flash-lite-latest
+    // 3. Default -> gemini-3-flash-preview
+    let model = "gemini-3-flash-preview";
+    if (isThinking) {
+      model = "gemini-3-pro-preview";
+    } else if (isFast) {
+      model = "gemini-flash-lite-latest";
+    }
+
+    const config: any = {
+      systemInstruction,
+      tools: useSearch ? [{ googleSearch: {} }] : undefined,
+    };
+
+    // Apply Thinking Config if requested for the Pro model
+    if (isThinking) {
+      config.thinkingConfig = { thinkingBudget: 32768 };
+      // Note: maxOutputTokens is intentionally omitted to avoid blocking output
+    }
+
     const response: GenerateContentResponse = await ai.models.generateContent({
-      // Corrected flash lite model alias based on guidelines
-      model: isFast ? "gemini-flash-lite-latest" : "gemini-3-flash-preview",
+      model,
       contents,
-      config: {
-        systemInstruction,
-        tools: useSearch ? [{ googleSearch: {} }] : undefined,
-      },
+      config,
     });
 
     const sources: GroundingSource[] = [];
